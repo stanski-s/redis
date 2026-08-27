@@ -8,6 +8,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class RedisServer {
     private static final ConcurrentHashMap<String, String> database = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, Long> expires = new ConcurrentHashMap<>();
 
     public static void main(String[] args) {
         int port = 6379;
@@ -27,19 +28,34 @@ public class RedisServer {
                                 out.print("+PONG\r\n");
                                 out.flush();
                             } else if (messages[0].equalsIgnoreCase("SET") && messages.length >=3) {
+                                if(messages.length == 4){
+                                    var expirationTime = Long.parseLong(messages[3]);
+                                    expires.put(messages[1], System.currentTimeMillis() + expirationTime);
+                                } else {
+                                    expires.remove(messages[1]);
+                                }
                                 database.put(messages[1], messages[2]);
                                 out.print("+OK\r\n");
                                 out.flush();
                             } else if (messages[0].equalsIgnoreCase("GET")&& messages.length >=2) {
-                                var output = database.get(messages[1]);
-                                if(output != null){
-                                    out.print("+"+output+"\r\n");
-                                    out.flush();
-                                }else {
+                                var expirationTime = expires.get(messages[1]);
+
+                                if(expirationTime != null && expirationTime < System.currentTimeMillis()){
+                                    database.remove(messages[1]);
+                                    expires.remove(messages[1]);
                                     out.print("$-1\r\n");
                                     out.flush();
-                                }
+                                } else {
 
+                                    var output = database.get(messages[1]);
+                                    if (output != null) {
+                                        out.print("+" + output + "\r\n");
+                                        out.flush();
+                                    } else {
+                                        out.print("$-1\r\n");
+                                        out.flush();
+                                    }
+                                }
                             } else  {
                                 out.print("-ERR unknown command\r\n");
                                 out.flush();

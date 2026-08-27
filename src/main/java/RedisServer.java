@@ -4,8 +4,11 @@ import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class RedisServer {
+    private static final ConcurrentHashMap<String, String> database = new ConcurrentHashMap<>();
+
     public static void main(String[] args) {
         int port = 6379;
         try (ServerSocket serverSocket = new ServerSocket(port)) {
@@ -19,10 +22,25 @@ public class RedisServer {
                         PrintWriter out = new PrintWriter(clientSocket.getOutputStream(), true);
                         String message;
                         while ((message = in.readLine()) != null) {
-                            if (message.equalsIgnoreCase("PING")) {
+                            String[] messages = message.split(" ");
+                            if (messages[0].equalsIgnoreCase("PING")) {
                                 out.print("+PONG\r\n");
                                 out.flush();
-                            } else {
+                            } else if (messages[0].equalsIgnoreCase("SET") && messages.length >=3) {
+                                database.put(messages[1], messages[2]);
+                                out.print("+OK\r\n");
+                                out.flush();
+                            } else if (messages[0].equalsIgnoreCase("GET")&& messages.length >=2) {
+                                var output = database.get(messages[1]);
+                                if(output != null){
+                                    out.print("+"+output+"\r\n");
+                                    out.flush();
+                                }else {
+                                    out.print("$-1\r\n");
+                                    out.flush();
+                                }
+
+                            } else  {
                                 out.print("-ERR unknown command\r\n");
                                 out.flush();
                             }

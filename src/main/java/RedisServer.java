@@ -11,11 +11,45 @@ public class RedisServer {
         try (BufferedReader reader = new BufferedReader(new FileReader("appendonly.aof"))) {
             String line;
             while ((line = reader.readLine()) != null) {
-                set(line.split(" "));
+                var commands = line.split(" ");
+                    if(commands[0].equalsIgnoreCase("SET")){
+                        set(commands);
+                    } else if (commands[0].equalsIgnoreCase("INCR")) {
+                        incr(commands);
+                    }
             }
         } catch (IOException e) {
             System.out.println("error with AOF or AOF is empty.");
         }
+    }
+
+    private static String get(String[] messages) {
+        var expirationTime = expires.get(messages[1]);
+
+        if (expirationTime != null && expirationTime < System.currentTimeMillis()) {
+            database.remove(messages[1]);
+            expires.remove(messages[1]);
+            return ("$-1\r\n");
+        } else {
+
+            var output = database.get(messages[1]);
+            if (output != null) {
+                return ("+" + output + "\r\n");
+            } else {
+                return ("$-1\r\n");
+            }
+        }
+    }
+
+    private static String incr(String[] messages){
+        return database.compute(messages[1], (k, oldCount) -> {
+            if (oldCount == null){
+                return "1";
+            } else {
+                long number = Long.parseLong(oldCount);
+                return String.valueOf(number + 1);
+            }
+        });
     }
 
     private static void set(String[] messages){
@@ -36,7 +70,7 @@ public class RedisServer {
         }
     }
 
-    public static void main(String[] args) {
+    static void main(String[] args) {
         int port = 6379;
         loadAOF();
         try (ServerSocket serverSocket = new ServerSocket(port)) {
@@ -60,23 +94,17 @@ public class RedisServer {
                                 out.print("+OK\r\n");
                                 out.flush();
                             } else if (messages[0].equalsIgnoreCase("GET")&& messages.length >=2) {
-                                var expirationTime = expires.get(messages[1]);
-
-                                if(expirationTime != null && expirationTime < System.currentTimeMillis()){
-                                    database.remove(messages[1]);
-                                    expires.remove(messages[1]);
-                                    out.print("$-1\r\n");
+                                    out.print(get(messages));
                                     out.flush();
-                                } else {
-
-                                    var output = database.get(messages[1]);
-                                    if (output != null) {
-                                        out.print("+" + output + "\r\n");
-                                        out.flush();
-                                    } else {
-                                        out.print("$-1\r\n");
-                                        out.flush();
-                                    }
+                            } else if (messages[0].equalsIgnoreCase("INCR") && messages.length >= 2) {
+                                try{
+                                    var count = incr(messages);
+                                    out.print(":" + count + "\r\n");
+                                    out.flush();
+                                    appendToAOF(message);
+                                } catch (NumberFormatException e){
+                                    out.print("-ERR value is not an integer\r\n");
+                                    out.flush();
                                 }
                             } else  {
                                 out.print("-ERR unknown command\r\n");

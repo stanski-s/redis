@@ -1,0 +1,78 @@
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.PrintWriter;
+import java.net.Socket;
+import java.util.HashMap;
+import java.util.Map;
+
+public class ClientHandler implements Runnable {
+    private final Socket clientSocket;
+    private final Database database;
+
+    private final Map<String, Command> commands = new HashMap<>();
+
+    public ClientHandler(Socket clientSocket, Database database) {
+        this.clientSocket = clientSocket;
+        this.database = database;
+
+        commands.put("PING", (args, raw, out, db) -> {
+            out.print("+PONG\r\n");
+            out.flush();
+        });
+
+        commands.put("GET", (args, raw, out, db) -> {
+            if (args.length >= 2) {
+                out.print(db.get(raw));
+                out.flush();
+            } else {
+                out.print("-ERR wrong number of arguments for 'GET' command\r\n");
+                out.flush();
+            }
+        });
+
+        commands.put("SET", (args, raw, out, db) -> {
+            db.set(raw);
+            out.print("+OK\r\n");
+            out.flush();
+        });
+
+        commands.put("INCR", (args, raw, out, db) -> {
+            try {
+                var count = db.incr(raw);
+                out.print(":" + count + "\r\n");
+                out.flush();
+            } catch (NumberFormatException e){
+                out.print("-ERR value is not an integer\r\n");
+                out.flush();
+            }
+        });
+    }
+
+    @Override
+    public void run() {
+        try (BufferedReader in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
+             PrintWriter out = new PrintWriter(clientSocket.getOutputStream(), true)) {
+
+            String message;
+            while ((message = in.readLine()) != null) {
+                String[] args = message.split(" ");
+                String commandName = args[0].toUpperCase();
+
+                Command command = commands.get(commandName);
+                if(command != null) {
+                    command.execute(args, message, out, database);
+                } else {
+                    out.print("-ERR unknown command\r\n");
+                    out.flush();
+                }
+            }
+            System.out.println("Client disconnected.");
+
+        } catch (IOException e) {
+            System.out.println("Client error: " + e.getMessage());
+        } finally {
+            try { clientSocket.close(); } catch (IOException ignored) {}
+        }
+    }
+}

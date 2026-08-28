@@ -1,23 +1,25 @@
-import java.io.*;
+import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.util.concurrent.ConcurrentHashMap;
 
 public class RedisServer {
-    static void main(String[] args) {
+    public static void main(String[] args) {
         int port = 6379;
-        loadAOF();
+        Database database = new Database();
         try (ServerSocket serverSocket = new ServerSocket(port)) {
-            System.out.println("Redis server listening on port " + port);
-            while(true){
+            System.out.println("Redis server listening on port:  " + port);
+            
+            while (true) {
                 Socket clientSocket = serverSocket.accept();
-                System.out.println("We have a client from: " + clientSocket.getInetAddress());
-                Thread clientHandler = new Thread(() -> {
+                System.out.println("New client from: " + clientSocket.getInetAddress());
 
-                });
-                clientHandler.start();
-                }
-            } catch (IOException e) {
+                ClientHandler clientHandler = new ClientHandler(clientSocket, database);
+
+                Thread clientThread = new Thread(clientHandler);
+                clientThread.start();
+            }
+
+        } catch (IOException e) {
             System.err.println("Server error: " + e.getMessage());
         }
     }

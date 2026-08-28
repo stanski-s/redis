@@ -1,7 +1,4 @@
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.PrintWriter;
+import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.concurrent.ConcurrentHashMap;
@@ -10,8 +7,38 @@ public class RedisServer {
     private static final ConcurrentHashMap<String, String> database = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, Long> expires = new ConcurrentHashMap<>();
 
+    private static void loadAOF(){
+        try (BufferedReader reader = new BufferedReader(new FileReader("appendonly.aof"))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                set(line.split(" "));
+            }
+        } catch (IOException e) {
+            System.out.println("error with AOF or AOF is empty.");
+        }
+    }
+
+    private static void set(String[] messages){
+        if(messages.length == 4){
+            var expirationTime = Long.parseLong(messages[3]);
+            expires.put(messages[1], System.currentTimeMillis() + expirationTime);
+        } else {
+            expires.remove(messages[1]);
+        }
+        database.put(messages[1], messages[2]);
+    }
+
+    private static synchronized void appendToAOF(String message){
+        try (PrintWriter fileOut = new PrintWriter(new FileWriter("appendonly.aof", true))) {
+            fileOut.println(message);
+        } catch (IOException e) {
+            System.err.println("error while writing to AOF: " + e.getMessage());
+        }
+    }
+
     public static void main(String[] args) {
         int port = 6379;
+        loadAOF();
         try (ServerSocket serverSocket = new ServerSocket(port)) {
             System.out.println("Redis server listening on port " + port);
             while(true){
@@ -28,13 +55,8 @@ public class RedisServer {
                                 out.print("+PONG\r\n");
                                 out.flush();
                             } else if (messages[0].equalsIgnoreCase("SET") && messages.length >=3) {
-                                if(messages.length == 4){
-                                    var expirationTime = Long.parseLong(messages[3]);
-                                    expires.put(messages[1], System.currentTimeMillis() + expirationTime);
-                                } else {
-                                    expires.remove(messages[1]);
-                                }
-                                database.put(messages[1], messages[2]);
+                                set(messages);
+                                appendToAOF(message);
                                 out.print("+OK\r\n");
                                 out.flush();
                             } else if (messages[0].equalsIgnoreCase("GET")&& messages.length >=2) {

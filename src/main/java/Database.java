@@ -15,9 +15,9 @@ public class Database {
             while ((line = reader.readLine()) != null) {
                 var commands = line.split(" ");
                 if(commands[0].equalsIgnoreCase("SET")){
-                    set(line);
+                    applySet(commands);
                 } else if (commands[0].equalsIgnoreCase("INCR")) {
-                    incr(line);
+                    applyIncr(commands);
                 }
             }
         } catch (IOException e) {
@@ -38,7 +38,7 @@ public class Database {
 
             var output = database.get(messages[1]);
             if (output != null) {
-                return ("+" + output + "\r\n");
+                return ("$" + output.getBytes().length + "\r\n" + output + "\r\n");
             } else {
                 return ("$-1\r\n");
             }

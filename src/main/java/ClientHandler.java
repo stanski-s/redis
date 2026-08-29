@@ -12,6 +12,25 @@ public class ClientHandler implements Runnable {
 
     private final Map<String, Command> commands = new HashMap<>();
 
+    private String[] readCommand (BufferedReader in) throws IOException {
+        String firstLine = in.readLine();
+        if (firstLine == null){
+            return null;
+        }
+        if (firstLine.startsWith("*")){
+            var numArgs = Integer.parseInt(firstLine.substring(1));
+            String[] args = new String[numArgs];
+
+            for (int i = 0; i < numArgs; i++){
+                var lineLength = in.readLine();
+                var line = in.readLine();
+                args[i] = line;
+            }
+            return args;
+        }
+        throw new IOException("Unsupported protocol format");
+    }
+
     public ClientHandler(Socket clientSocket, Database database) {
         this.clientSocket = clientSocket;
         this.database = database;
@@ -54,10 +73,10 @@ public class ClientHandler implements Runnable {
         try (BufferedReader in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
              PrintWriter out = new PrintWriter(clientSocket.getOutputStream(), true)) {
 
-            String message;
-            while ((message = in.readLine()) != null) {
-                String[] args = message.split(" ");
+            String[] args;
+            while ((args = readCommand(in)) != null) {
                 String commandName = args[0].toUpperCase();
+                String message = String.join(" ", args);
 
                 Command command = commands.get(commandName);
                 if(command != null) {

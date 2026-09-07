@@ -91,6 +91,42 @@ public class Database {
         return pushToList(args, false);
     }
 
+    public String lpop(String[] args) {
+        return popFromList(args, true);
+    }
+
+    public String rpop(String[] args) {
+        return popFromList(args, false);
+    }
+
+    public String popFromList(String[] args, boolean isLeft) {
+        String key = args[1];
+        Object val = database.get(key);
+
+        if (val == null) {
+            return "$-1\r\n";
+        }
+        if (!(val instanceof ConcurrentLinkedDeque)) {
+            return "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n";
+        }
+
+        @SuppressWarnings("unchecked")
+        ConcurrentLinkedDeque<String> list = (ConcurrentLinkedDeque<String>) val;
+
+        String item = isLeft ? list.pollFirst() : list.pollLast();
+
+        if (item == null) {
+            return "$-1\r\n";
+        }
+
+        if (list.isEmpty()) {
+            database.remove(key);
+            expires.remove(key);
+        }
+
+        return "$" + item.getBytes().length + "\r\n" + item + "\r\n";
+    }
+
     public String lrange(String[] args) {
         String key = args[1];
         Object val = database.get(key);

@@ -76,6 +76,26 @@ public class ClientHandler implements Runnable {
             }
         });
 
+        commands.put("LPOP", (args, raw, out, db) -> {
+            if (args.length >= 2) {
+                out.print(db.lpop(args));
+                out.flush();
+            } else {
+                out.print("-ERR wrong number of arguments for 'lpop' command\r\n");
+                out.flush();
+            }
+        });
+
+        commands.put("RPOP", (args, raw, out, db) -> {
+            if (args.length >= 2) {
+                out.print(db.rpop(args));
+                out.flush();
+            } else {
+                out.print("-ERR wrong number of arguments for 'rpop' command\r\n");
+                out.flush();
+            }
+        });
+
         commands.put("LRANGE", (args, raw, out, db) -> {
             if (args.length >= 4) {
                 out.print(db.lrange(args));

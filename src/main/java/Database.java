@@ -1,12 +1,51 @@
 import java.io.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 public class Database {
+    private java.util.Iterator<String> expirationIterator = null;
     private final ConcurrentHashMap<String, String> database = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Long> expires = new ConcurrentHashMap<>();
+    private final ScheduledExecutorService reaperExecutor = Executors.newSingleThreadScheduledExecutor();
 
     public Database() {
         loadAOF();
+        startActiveExpiration();
+    }
+
+    private void startActiveExpiration() {
+        reaperExecutor.scheduleAtFixedRate(this::cleanUpExpiredKeys, 1000, 1000, TimeUnit.MILLISECONDS);
+    }
+
+    private void cleanUpExpiredKeys() {
+        if (expires.isEmpty()) return;
+        int sampleSize = 10;
+        int expiredCount;
+
+        do {
+            expiredCount = 0;
+            long now = System.currentTimeMillis();
+            int checked = 0;
+
+            while (checked < sampleSize) {
+                if (expirationIterator == null || !expirationIterator.hasNext()) {
+                    expirationIterator = expires.keySet().iterator();
+                    if (!expirationIterator.hasNext()) break;
+                }
+                String key = expirationIterator.next();
+                Long expirationTime = expires.get(key);
+                checked++;
+
+                if (expirationTime != null && expirationTime < now) {
+                    database.remove(key);
+                    expires.remove(key);
+                    expiredCount++;
+                    System.out.println("Deleted: " + key);
+                }
+            }
+        }while (expiredCount > sampleSize / 4);
     }
 
     public void loadAOF(){

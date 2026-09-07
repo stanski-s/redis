@@ -76,6 +76,16 @@ public class ClientHandler implements Runnable {
             }
         });
 
+        commands.put("LRANGE", (args, raw, out, db) -> {
+            if (args.length >= 4) {
+                out.print(db.lrange(args));
+                out.flush();
+            } else {
+                out.print("-ERR wrong number of arguments for 'lrange' command\r\n");
+                out.flush();
+            }
+        });
+
         commands.put("INCR", (args, raw, out, db) -> {
             try {
                 var count = db.incr(raw);

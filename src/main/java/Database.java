@@ -91,6 +91,57 @@ public class Database {
         return pushToList(args, false);
     }
 
+    public String lrange(String[] args) {
+        String key = args[1];
+        Object val = database.get(key);
+
+        if (val == null){
+            return "*0\\r\\n";
+        }
+
+        if (!(val instanceof ConcurrentLinkedDeque)) {
+            return "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n";
+        }
+
+        @SuppressWarnings("unchecked")
+        ConcurrentLinkedDeque<String> list = (ConcurrentLinkedDeque<String>) val;
+        int size = list.size();
+
+        int start;
+        int stop;
+        try {
+            start = Integer.parseInt(args[2]);
+            stop = Integer.parseInt(args[3]);
+        } catch (NumberFormatException e) {
+            return "-ERR value is not an integer or out of range\r\n";
+        }
+
+        if (start < 0) start = size + start;
+        if (stop < 0) stop = size + stop;
+
+        if (start < 0) start = 0;
+        if (start >= size) return "*0\r\n";
+        if (stop >= size) stop = size - 1;
+        if (start > stop) return "*0\r\n";
+
+        int resultSize = stop - start + 1;
+        StringBuilder sb = new StringBuilder();
+        sb.append("*").append(resultSize).append("\r\n");
+
+        int currentIndex = 0;
+        for (String item : list) {
+            if (currentIndex >= start && currentIndex <= stop) {
+                sb.append("$").append(item.getBytes().length).append("\r\n")
+                        .append(item).append("\r\n");
+            }
+            if (currentIndex > stop) {
+                break;
+            }
+            currentIndex++;
+        }
+        return sb.toString();
+    }
+
     private String pushToList(String[] args, boolean isLeft) {
         String key = args[1];
 

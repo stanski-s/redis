@@ -1,12 +1,16 @@
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class RedisServer {
     public static void main(String[] args) {
         int port = 6379;
         Database database = new Database();
-        try (ServerSocket serverSocket = new ServerSocket(port)) {
+
+        try (ExecutorService threadPool = Executors.newFixedThreadPool(10);
+             ServerSocket serverSocket = new ServerSocket(port)) {
             System.out.println("Redis server listening on port:  " + port);
 
             while (true) {
@@ -15,8 +19,7 @@ public class RedisServer {
 
                 ClientHandler clientHandler = new ClientHandler(clientSocket, database);
 
-                Thread clientThread = new Thread(clientHandler);
-                clientThread.start();
+                threadPool.execute(clientHandler);
             }
 
         } catch (IOException e) {

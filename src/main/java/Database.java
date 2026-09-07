@@ -1,12 +1,9 @@
 import java.io.*;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 
 public class Database {
     private java.util.Iterator<String> expirationIterator = null;
-    private final ConcurrentHashMap<String, String> database = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Object> database = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Long> expires = new ConcurrentHashMap<>();
     private final ScheduledExecutorService reaperExecutor = Executors.newSingleThreadScheduledExecutor();
 
@@ -76,12 +73,45 @@ public class Database {
         } else {
 
             var output = database.get(messages[1]);
-            if (output != null) {
-                return ("$" + output.getBytes().length + "\r\n" + output + "\r\n");
+            if (output instanceof String strOutput){
+                return "$" + strOutput.getBytes().length + "\r\n" + strOutput + "\r\n";
+            } else if (output != null) {
+                return "-WRONGTYPE Operation against a key holding the wrong kind of value\\r\\n";
             } else {
                 return ("$-1\r\n");
             }
         }
+    }
+
+    public String lpush (String[] args) {
+        return pushToList(args, true);
+    }
+
+    public String rpush (String[] args) {
+        return pushToList(args, false);
+    }
+
+    private String pushToList(String[] args, boolean isLeft) {
+        String key = args[1];
+
+        Object val = database.computeIfAbsent(key, k -> new ConcurrentLinkedDeque<String>());
+
+        if (!(val instanceof ConcurrentLinkedDeque)) {
+            return "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n";
+        }
+
+        @SuppressWarnings("unchecked")
+        ConcurrentLinkedDeque<String> list = (ConcurrentLinkedDeque<String>) val;
+
+        for (int i = 2; i < args.length; i++) {
+            if (isLeft) {
+                list.addFirst(args[i]);
+            } else {
+                list.addLast(args[i]);
+            }
+        }
+
+        return ":" + list.size() + "\r\n";
     }
 
     public String incr(String message) {
@@ -96,10 +126,10 @@ public class Database {
             if (oldCount == null){
                 return "1";
             } else {
-                long number = Long.parseLong(oldCount);
+                long number = Long.parseLong((String) oldCount);
                 return String.valueOf(number + 1);
             }
-        });
+        }).toString();
     }
 
     public void set(String message) {

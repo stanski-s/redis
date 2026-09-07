@@ -56,6 +56,26 @@ public class ClientHandler implements Runnable {
             out.flush();
         });
 
+        commands.put("LPUSH", (args, raw, out, db) -> {
+            if (args.length >= 3) {
+                out.print(db.lpush(args));
+                out.flush();
+            } else {
+                out.print("-ERR wrong number of arguments for 'lpush' command\r\n");
+                out.flush();
+            }
+        });
+
+        commands.put("RPUSH", (args, raw, out, db) -> {
+            if (args.length >= 3) {
+                out.print(db.rpush(args));
+                out.flush();
+            } else {
+                out.print("-ERR wrong number of arguments for 'rpush' command\r\n");
+                out.flush();
+            }
+        });
+
         commands.put("INCR", (args, raw, out, db) -> {
             try {
                 var count = db.incr(raw);

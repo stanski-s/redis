@@ -1,3 +1,8 @@
+package server;
+
+import command.Command;
+import core.Database;
+
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;

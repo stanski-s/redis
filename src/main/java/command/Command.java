@@ -1,3 +1,7 @@
+package command;
+
+import core.Database;
+
 import java.io.PrintWriter;
 
 @FunctionalInterface

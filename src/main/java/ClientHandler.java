@@ -3,7 +3,9 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.Socket;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -11,6 +13,8 @@ import java.util.concurrent.LinkedBlockingQueue;
 public class ClientHandler implements Runnable {
     private final Socket clientSocket;
     private final Database database;
+    private boolean inTransaction = false;
+    private final List<String[]> transactionQueue = new ArrayList<>();
 
     private final Map<String, Command> commands = new HashMap<>();
 
@@ -152,6 +156,55 @@ public class ClientHandler implements Runnable {
             }
         });
 
+        commands.put("MULTI", (args, raw, out, db) -> {
+            inTransaction = true;
+            out.print("+OK\r\n");
+            out.flush();
+        });
+
+        commands.put("DISCARD", (args, raw, out, db) -> {
+            if (!inTransaction) {
+                out.print("-ERR DISCARD without MULTI\r\n");
+                out.flush();
+                return;
+            }
+            inTransaction = false;
+            transactionQueue.clear();
+            out.print("+OK\r\n");
+            out.flush();
+        });
+
+        commands.put("EXEC", (args, raw, out, db) -> {
+            if (!inTransaction) {
+                out.print("-ERR EXEC without MULTI\r\n");
+                out.flush();
+                return;
+            }
+
+            inTransaction = false;
+
+            if (transactionQueue.isEmpty()) {
+                out.print("*0\r\n");
+                out.flush();
+                return;
+            }
+
+            out.print("*" + transactionQueue.size() + "\r\n");
+
+            synchronized (db) {
+                for (String[] queuedArgs : transactionQueue) {
+                    Command queuedCmd = commands.get(queuedArgs[0].toUpperCase());
+                    if (queuedCmd != null) {
+                        String reconstructedRaw = String.join(" ", queuedArgs);
+                        queuedCmd.execute(queuedArgs, reconstructedRaw, out, db);
+                    }
+                }
+            }
+
+            out.flush();
+            transactionQueue.clear();
+        });
+
         commands.put("INCR", (args, raw, out, db) -> {
             try {
                 var count = db.incr(raw);
@@ -173,6 +226,13 @@ public class ClientHandler implements Runnable {
             while ((args = readCommand(in)) != null) {
                 String commandName = args[0].toUpperCase();
                 String message = String.join(" ", args);
+
+                if (inTransaction && !commandName.equals("EXEC") && !commandName.equals("DISCARD") && !commandName.equals("MULTI")) {
+                    transactionQueue.add(args);
+                    out.print("+QUEUED\r\n");
+                    out.flush();
+                    continue;
+                }
 
                 Command command = commands.get(commandName);
                 if(command != null) {

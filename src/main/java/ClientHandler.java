@@ -5,6 +5,8 @@ import java.io.PrintWriter;
 import java.net.Socket;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 
 public class ClientHandler implements Runnable {
     private final Socket clientSocket;
@@ -92,6 +94,50 @@ public class ClientHandler implements Runnable {
                 out.flush();
             } else {
                 out.print("-ERR wrong number of arguments for 'rpop' command\r\n");
+                out.flush();
+            }
+        });
+
+        commands.put("PUBLISH", (args, raw, out, db) -> {
+            if (args.length >= 3) {
+                String channel = args[1];
+                String message = args[2];
+                int receivers = db.publish(channel, message);
+                out.print(":" + receivers + "\r\n");
+                out.flush();
+            } else {
+                out.print("-ERR wrong number of arguments for 'publish' command\r\n");
+                out.flush();
+            }
+        });
+
+        commands.put("SUBSCRIBE", (args, raw, out, db) -> {
+            if (args.length >= 2) {
+                String channel = args[1];
+                BlockingQueue<String> clientInbox = new LinkedBlockingQueue<>();
+
+                db.addSubscriber(channel, clientInbox);
+
+                out.print("*3\r\n$9\r\nsubscribe\r\n$" + channel.getBytes().length + "\r\n" + channel + "\r\n:1\r\n");
+                out.flush();
+
+                System.out.println("[PubSub] Client subscribed to channel: " + channel);
+
+                try {
+                    while (true) {
+                        String incomingMessage = clientInbox.take();
+                        out.print(incomingMessage);
+                        out.flush();
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                } finally {
+                    db.removeSubscriber(channel, clientInbox);
+                    System.out.println("[PubSub] Client unsubscribed to channel: " + channel);
+                }
+
+            } else {
+                out.print("-ERR wrong number of arguments for 'subscribe' command\r\n");
                 out.flush();
             }
         });

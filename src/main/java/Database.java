@@ -1,4 +1,5 @@
 import java.io.*;
+import java.util.Set;
 import java.util.concurrent.*;
 
 public class Database {
@@ -6,6 +7,7 @@ public class Database {
     private final ConcurrentHashMap<String, Object> database = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Long> expires = new ConcurrentHashMap<>();
     private final ScheduledExecutorService reaperExecutor = Executors.newSingleThreadScheduledExecutor();
+    private final ConcurrentHashMap<String, Set<BlockingQueue<String>>> pubSubChannels = new ConcurrentHashMap<>();
 
     public Database() {
         loadAOF();
@@ -14,6 +16,38 @@ public class Database {
 
     private void startActiveExpiration() {
         reaperExecutor.scheduleAtFixedRate(this::cleanUpExpiredKeys, 1000, 1000, TimeUnit.MILLISECONDS);
+    }
+
+    public int publish(String channel, String message) {
+        Set<BlockingQueue<String>> subscribers = pubSubChannels.get(channel);
+        if (subscribers == null || subscribers.isEmpty()) {
+            return 0;
+        }
+
+        String respMessage = "*3\r\n" +
+                "$7\r\nmessage\r\n" +
+                "$" + channel.getBytes().length + "\r\n" + channel + "\r\n" +
+                "$" + message.getBytes().length + "\r\n" + message + "\r\n";
+
+        for (var queue : subscribers) {
+            queue.offer(respMessage);
+        }
+        return subscribers.size();
+
+    }
+
+    public void addSubscriber(String channel, BlockingQueue<String> clientQueue) {
+        pubSubChannels.computeIfAbsent(channel, k -> ConcurrentHashMap.newKeySet()).add(clientQueue);
+    }
+
+    public void removeSubscriber(String channel, BlockingQueue<String> clientQueue) {
+        Set<BlockingQueue<String>> subscribers = pubSubChannels.get(channel);
+        if (subscribers != null) {
+            subscribers.remove(clientQueue);
+            if (subscribers.isEmpty()) {
+                pubSubChannels.remove(channel);
+            }
+        }
     }
 
     private void cleanUpExpiredKeys() {

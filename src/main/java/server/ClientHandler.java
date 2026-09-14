@@ -46,27 +46,6 @@ public class ClientHandler implements Runnable {
         this.clientSocket = clientSocket;
         this.database = database;
 
-        commands.put("PING", (args, raw, out, db) -> {
-            out.print("+PONG\r\n");
-            out.flush();
-        });
-
-        commands.put("GET", (args, raw, out, db) -> {
-            if (args.length >= 2) {
-                out.print(db.get(raw));
-                out.flush();
-            } else {
-                out.print("-ERR wrong number of arguments for 'GET' command\r\n");
-                out.flush();
-            }
-        });
-
-        commands.put("SET", (args, raw, out, db) -> {
-            db.set(raw);
-            out.print("+OK\r\n");
-            out.flush();
-        });
-
         commands.put("LPUSH", (args, raw, out, db) -> {
             if (args.length >= 3) {
                 out.print(db.lpush(args));
@@ -208,17 +187,6 @@ public class ClientHandler implements Runnable {
 
             out.flush();
             transactionQueue.clear();
-        });
-
-        commands.put("INCR", (args, raw, out, db) -> {
-            try {
-                var count = db.incr(raw);
-                out.print(":" + count + "\r\n");
-                out.flush();
-            } catch (NumberFormatException e){
-                out.print("-ERR value is not an integer\r\n");
-                out.flush();
-            }
         });
     }
 

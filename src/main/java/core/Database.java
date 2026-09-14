@@ -44,22 +44,6 @@ public class Database {
         } while (expiredCount > sampleSize / 4);
     }
 
-    public void loadAOF(){
-        try (BufferedReader reader = new BufferedReader(new FileReader("appendonly.aof"))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                var commands = line.split(" ");
-                if(commands[0].equalsIgnoreCase("SET")){
-                    //applySet(commands);
-                } else if (commands[0].equalsIgnoreCase("INCR")) {
-                    //applyIncr(commands);
-                }
-            }
-        } catch (IOException e) {
-            System.out.println("error with AOF or AOF is empty.");
-        }
-    }
-
     public Object get(String key) {
         DatabaseEntry entry = storage.get(key);
         if (entry == null) {

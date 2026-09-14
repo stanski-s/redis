@@ -1,7 +1,8 @@
 package server;
 
 import command.Command;
-import core.Database;
+import command.CommandRegistry;
+import protocol.RespWriter;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -9,218 +10,87 @@ import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.Socket;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.LinkedBlockingQueue;
 
 public class ClientHandler implements Runnable {
     private final Socket clientSocket;
-    private final Database database;
+    private final CommandRegistry commandRegistry;
+    private final RespWriter writer;
     private boolean inTransaction = false;
     private final List<String[]> transactionQueue = new ArrayList<>();
 
-    private final Map<String, Command> commands = new HashMap<>();
+    public ClientHandler(Socket clientSocket, CommandRegistry commandRegistry) throws IOException {
+        this.clientSocket = clientSocket;
+        this.commandRegistry = commandRegistry;
+        this.writer = new RespWriter(new PrintWriter(clientSocket.getOutputStream(), true));
+    }
 
-    private String[] readCommand (BufferedReader in) throws IOException {
+    private String[] readCommand(BufferedReader in) throws IOException {
         String firstLine = in.readLine();
-        if (firstLine == null){
+        if (firstLine == null) {
             return null;
         }
-        if (firstLine.startsWith("*")){
+        if (firstLine.startsWith("*")) {
             var numArgs = Integer.parseInt(firstLine.substring(1));
             String[] args = new String[numArgs];
 
-            for (int i = 0; i < numArgs; i++){
-                var lineLength = in.readLine();
-                var line = in.readLine();
-                args[i] = line;
+            for (int i = 0; i < numArgs; i++) {
+                in.readLine();
+                args[i] = in.readLine();
             }
             return args;
         }
         throw new IOException("Unsupported protocol format");
     }
 
-    public ClientHandler(Socket clientSocket, Database database) {
-        this.clientSocket = clientSocket;
-        this.database = database;
-
-        commands.put("LPUSH", (args, raw, out, db) -> {
-            if (args.length >= 3) {
-                out.print(db.lpush(args));
-                out.flush();
-            } else {
-                out.print("-ERR wrong number of arguments for 'lpush' command\r\n");
-                out.flush();
-            }
-        });
-
-        commands.put("RPUSH", (args, raw, out, db) -> {
-            if (args.length >= 3) {
-                out.print(db.rpush(args));
-                out.flush();
-            } else {
-                out.print("-ERR wrong number of arguments for 'rpush' command\r\n");
-                out.flush();
-            }
-        });
-
-        commands.put("LPOP", (args, raw, out, db) -> {
-            if (args.length >= 2) {
-                out.print(db.lpop(args));
-                out.flush();
-            } else {
-                out.print("-ERR wrong number of arguments for 'lpop' command\r\n");
-                out.flush();
-            }
-        });
-
-        commands.put("RPOP", (args, raw, out, db) -> {
-            if (args.length >= 2) {
-                out.print(db.rpop(args));
-                out.flush();
-            } else {
-                out.print("-ERR wrong number of arguments for 'rpop' command\r\n");
-                out.flush();
-            }
-        });
-
-        commands.put("PUBLISH", (args, raw, out, db) -> {
-            if (args.length >= 3) {
-                String channel = args[1];
-                String message = args[2];
-                int receivers = db.publish(channel, message);
-                out.print(":" + receivers + "\r\n");
-                out.flush();
-            } else {
-                out.print("-ERR wrong number of arguments for 'publish' command\r\n");
-                out.flush();
-            }
-        });
-
-        commands.put("SUBSCRIBE", (args, raw, out, db) -> {
-            if (args.length >= 2) {
-                String channel = args[1];
-                BlockingQueue<String> clientInbox = new LinkedBlockingQueue<>();
-
-                db.addSubscriber(channel, clientInbox);
-
-                out.print("*3\r\n$9\r\nsubscribe\r\n$" + channel.getBytes().length + "\r\n" + channel + "\r\n:1\r\n");
-                out.flush();
-
-                System.out.println("[PubSub] Client subscribed to channel: " + channel);
-
-                try {
-                    while (true) {
-                        String incomingMessage = clientInbox.take();
-                        out.print(incomingMessage);
-                        out.flush();
-                    }
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                } finally {
-                    db.removeSubscriber(channel, clientInbox);
-                    System.out.println("[PubSub] Client unsubscribed to channel: " + channel);
-                }
-
-            } else {
-                out.print("-ERR wrong number of arguments for 'subscribe' command\r\n");
-                out.flush();
-            }
-        });
-
-        commands.put("LRANGE", (args, raw, out, db) -> {
-            if (args.length >= 4) {
-                out.print(db.lrange(args));
-                out.flush();
-            } else {
-                out.print("-ERR wrong number of arguments for 'lrange' command\r\n");
-                out.flush();
-            }
-        });
-
-        commands.put("MULTI", (args, raw, out, db) -> {
-            inTransaction = true;
-            out.print("+OK\r\n");
-            out.flush();
-        });
-
-        commands.put("DISCARD", (args, raw, out, db) -> {
-            if (!inTransaction) {
-                out.print("-ERR DISCARD without MULTI\r\n");
-                out.flush();
-                return;
-            }
-            inTransaction = false;
-            transactionQueue.clear();
-            out.print("+OK\r\n");
-            out.flush();
-        });
-
-        commands.put("EXEC", (args, raw, out, db) -> {
-            if (!inTransaction) {
-                out.print("-ERR EXEC without MULTI\r\n");
-                out.flush();
-                return;
-            }
-
-            inTransaction = false;
-
-            if (transactionQueue.isEmpty()) {
-                out.print("*0\r\n");
-                out.flush();
-                return;
-            }
-
-            out.print("*" + transactionQueue.size() + "\r\n");
-
-            synchronized (db) {
-                for (String[] queuedArgs : transactionQueue) {
-                    Command queuedCmd = commands.get(queuedArgs[0].toUpperCase());
-                    if (queuedCmd != null) {
-                        String reconstructedRaw = String.join(" ", queuedArgs);
-                        queuedCmd.execute(queuedArgs, reconstructedRaw, out, db);
-                    }
-                }
-            }
-
-            out.flush();
-            transactionQueue.clear();
-        });
-    }
-
     @Override
     public void run() {
-        try (BufferedReader in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
-             PrintWriter out = new PrintWriter(clientSocket.getOutputStream(), true)) {
-
+        try (BufferedReader in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()))) {
             String[] args;
             while ((args = readCommand(in)) != null) {
+                if (args.length == 0) continue;
                 String commandName = args[0].toUpperCase();
-                String message = String.join(" ", args);
 
                 if (inTransaction && !commandName.equals("EXEC") && !commandName.equals("DISCARD") && !commandName.equals("MULTI")) {
                     transactionQueue.add(args);
-                    out.print("+QUEUED\r\n");
-                    out.flush();
+                    writer.writeSimpleString("QUEUED");
                     continue;
                 }
 
-                Command command = commands.get(commandName);
-                if(command != null) {
-                    command.execute(args, message, out, database);
+                Command command = commandRegistry.get(commandName);
+                if (command != null) {
+                    command.execute(args, writer, this);
                 } else {
-                    out.print("-ERR unknown command\r\n");
-                    out.flush();
+                    writer.writeError("ERR unknown command '" + args[0] + "'");
                 }
             }
-            System.out.println("Client disconnected.");
+            System.out.println("Client disconnected: " + clientSocket.getInetAddress());
 
         } catch (IOException e) {
             System.out.println("Client error: " + e.getMessage());
         } finally {
             try { clientSocket.close(); } catch (IOException ignored) {}
         }
+    }
+
+    public boolean isInTransaction() {
+        return inTransaction;
+    }
+
+    public void setInTransaction(boolean inTransaction) {
+        this.inTransaction = inTransaction;
+    }
+
+    public List<String[]> getTransactionQueue() {
+        return transactionQueue;
+    }
+
+    public void resetTransaction() {
+        this.inTransaction = false;
+        transactionQueue.clear();
+    }
+
+    public boolean isClosed() {
+        return clientSocket.isClosed();
     }
 }

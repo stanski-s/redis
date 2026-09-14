@@ -1,6 +1,9 @@
 package core;
 
 import org.junit.jupiter.api.Test;
+
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 public class DatabaseTest {
@@ -40,5 +43,32 @@ public class DatabaseTest {
 
         assertEquals(1, val1);
         assertEquals(2, val2);
+    }
+
+    @Test
+    void shouldHandleListOperations() {
+        Database db = new Database();
+
+        int size = db.rpush("mylist", "a", "b", "c");
+        assertEquals(3, size);
+
+        assertEquals(List.of("a", "b", "c"), db.lrange("mylist", 0, -1));
+
+        assertEquals("a", db.lpop("mylist"));
+        assertEquals("c", db.rpop("mylist"));
+        assertEquals("b", db.lpop("mylist"));
+
+        assertNull(db.lpop("mylist"));
+    }
+
+    @Test
+    void shouldThrowExceptionWhenOperationOnWrongType() {
+        Database db = new Database();
+
+        db.set("text_key", "hello");
+
+        assertThrows(IllegalStateException.class, () -> {
+            db.lpush("text_key", "world");
+        });
     }
 }

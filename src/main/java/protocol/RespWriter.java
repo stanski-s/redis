@@ -10,6 +10,10 @@ public class RespWriter {
         this.out = out;
     }
 
+    public PrintWriter getRawWriter() {
+        return out;
+    }
+
     public void writeSimpleString(String msg) {
         out.print("+" + msg + "\r\n");
         out.flush();
@@ -37,7 +41,7 @@ public class RespWriter {
     public void writeNull() {
         writeBulkString(null);
     }
-    
+
     public void writeArray(List<String> items) {
         if (items == null) {
             out.print("*-1\r\n");
@@ -53,6 +57,11 @@ public class RespWriter {
                 out.print("$" + item.getBytes().length + "\r\n" + item + "\r\n");
             }
         }
+        out.flush();
+    }
+
+    public void writeArrayHeader(int count) {
+        out.print("*" + count + "\r\n");
         out.flush();
     }
 }
